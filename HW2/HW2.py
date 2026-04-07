@@ -5,8 +5,8 @@ import time
 
 from adafruit_motor import servo
 
-pwm_servo  = pwmio.PWMOut(board.GP14, duty_cycle = 2**15, frequency = 50)
-servo1 = servo.Servo(pwm_servo, min_pulse = 500, max_pulse = 2200)
+pwm_servo  = pwmio.PWMOut(board.GP14, duty_cycle = 2, frequency = 50)
+servo1 = servo.Servo(pwm_servo, min_pulse = 500, max_pulse = 2400)
 
 
 for count in range(1000000):
