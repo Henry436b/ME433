@@ -38,6 +38,7 @@ pico_sdk_init()
 add_executable(HW4
         HW4.c 
         ssd1306.c
+        draw.c
         )
 
 pico_set_program_name(HW4 "HW4")
@@ -50,7 +51,9 @@ pico_enable_stdio_usb(HW4 0)
 # Add the standard library to the build
 target_link_libraries(HW4
         pico_stdlib
-        hardware_i2c)
+        hardware_i2c
+        hardware_adc
+        )
 
 # Add the standard include files to the build
 target_include_directories(HW4 PRIVATE
