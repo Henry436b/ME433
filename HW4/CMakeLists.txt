@@ -35,7 +35,10 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(HW4 HW4.c )
+add_executable(HW4
+        HW4.c 
+        ssd1306.c
+        )
 
 pico_set_program_name(HW4 "HW4")
 pico_set_program_version(HW4 "0.1")
@@ -46,7 +49,8 @@ pico_enable_stdio_usb(HW4 0)
 
 # Add the standard library to the build
 target_link_libraries(HW4
-        pico_stdlib)
+        pico_stdlib
+        hardware_i2c)
 
 # Add the standard include files to the build
 target_include_directories(HW4 PRIVATE
