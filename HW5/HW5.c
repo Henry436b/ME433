@@ -132,7 +132,7 @@ void draw_tilt(float ax, float ay) {
     ssd1306_clear();
 
     int ex = CX - (int)(ax * LINE_LEN);
-    int ey = CY - (int)(ay * LINE_LEN);
+    int ey = CY + (int)(ay * LINE_LEN);
 
     draw_line(CX, CY, ex, ey);
 
