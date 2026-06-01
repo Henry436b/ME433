@@ -1,22 +1,46 @@
 import csv
+import numpy as np
+import matplotlib.pyplot as plt
 
-t = [] # column 0
-data = [] # column 1
+def load_csv(filename):
+    t, data = [], []
+    with open(filename) as f:
+        reader = csv.reader(f)
+        for row in reader:
+            t.append(float(row[0]))
+            data.append(float(row[1]))
+    return t, data
 
-with open('sigA.csv') as f:
-    # open the csv file
-    reader = csv.reader(f)
-    for row in reader:
-        # read the rows 1 one by one
-        t.append(float(row[0])) # leftmost column
-        data.append(float(row[1])) # second column
+def plot_signal_fft(ax1, ax2, t, data, title):\
+    
+    #sample rate = number of data points / total time of samples
+    # Access total time by going to last item in t list
+    Fs = len(data) / t[-1] # Sample rate
+    
+    y = np.array(data)
+    n = len(y)
+    k = np.arange(n)
+    frq = k / (n / Fs)
+    frq = frq[range(int(n / 2))]
+    Y = np.fft.fft(y) / n
+    Y = Y[range(int(n / 2))]
 
-# sample rate
-sample_rate = len(t) / t[-1]
-print("Sample rate:", sample_rate, "Hz")
+    ax1.plot(t, data, 'b')
+    ax1.set_xlabel('Time [s]')
+    ax1.set_ylabel('Amplitude')
+    ax1.set_title(title)
 
-for i in range(len(t)):
-    print(str(t[i]) + ", " + str(data[i]))
+    ax2.loglog(frq, abs(Y), 'b')
+    ax2.set_xlabel('Freq (Hz)')
+    ax2.set_ylabel('|Y(freq)|')
 
+files = ['sigA.csv', 'sigB.csv', 'sigC.csv', 'sigD.csv']
 
-
+for fname in files:
+    t, data = load_csv(fname)
+    fig, (ax1, ax2) = plt.subplots(2, 1)
+    plot_signal_fft(ax1, ax2, t, data, fname)
+    plt.tight_layout()
+    savename = fname.replace('.csv', '_plot_dev4.png')
+    plt.savefig(savename)
+    plt.show()
