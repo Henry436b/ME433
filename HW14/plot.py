@@ -67,5 +67,5 @@ axes[1].legend()
 axes[1].grid(True)
 
 plt.tight_layout()
-plt.savefig("hx711_data.png", dpi=150)
+plt.savefig("hx711_data2.png", dpi=150)
 plt.show()
