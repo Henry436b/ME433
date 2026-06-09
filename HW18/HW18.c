@@ -6,7 +6,7 @@
 #include "as5600.h"
 #include "hx711.h"
 
-// ── Pin definitions ───────────────────────────────────────────────────────────
+// Pin definitions
 #define INA_SDA     10
 #define INA_SCL     11
 #define ENC_SDA     12
@@ -19,46 +19,35 @@
 #define INA219_ADDR 0x40
 #define PWM_MAX     4096
 
-// ── Base tuning ───────────────────────────────────────────────────────────────
-#define Kd_position   0.0f
-#define KP_BASE       1.7f
-#define KI_BASE       0.11f
-#define KP_WALL_MAX   5.1f
-#define KI_WALL_MAX   0.33f
+// Tuning
+float Kd_position = 0.0f;
+float Kp_current  = 1.7f;
+float Ki_current  = 0.11f;
 
-// ── Wall parameters ───────────────────────────────────────────────────────────
-#define WALL_LOW      45.0f
-#define WALL_HIGH     110.0f
-#define WALL_ZONE     10.0f
-#define WALL_FORCE    500.0f
+// Wall parameters
+#define WALL_LOW    45.0f
+#define WALL_ZONE   10.0f
+#define WALL_FORCE  500.0f
 
-// ── HX711 parameters ─────────────────────────────────────────────────────────
-#define HX_SAMPLES       16
-#define HX_DEADBAND      2000     // counts below this = no push detected
-#define HX_MAX_PUSH      40000   // counts at firm push — tune after testing
+// Bump parameters
+#define BUMP_CENTER  90.0f
+#define BUMP_WIDTH   10.0f
+#define BUMP_FORCE   350.0f
 
-// ── Shared state ──────────────────────────────────────────────────────────────
+// Shared state
 volatile float desired_current  = 0.0f;
 volatile float actual_current   = 0.0f;
 volatile float position_deg     = 0.0f;
 volatile float last_position    = 0.0f;
 volatile float current_integral = 0.0f;
 volatile int   pwm_duty         = 0;
-volatile float Kp_current       = KP_BASE;
-volatile float Ki_current       = KI_BASE;
+static   int32_t hx_zero        = 0;
 
-// ── HX711 state ───────────────────────────────────────────────────────────────
-static int32_t hx_buf[HX_SAMPLES];
-static int     hx_idx  = 0;
-static int32_t hx_sum  = 0;
-static int32_t hx_zero = 0;     // baseline captured at startup
-static float   push_norm = 0.0f; // -1.0 = hard push one way, +1.0 = other way
-
-// ── Timers ────────────────────────────────────────────────────────────────────
+// Timers
 struct repeating_timer current_timer;
 struct repeating_timer position_timer;
 
-// ── INA219 ────────────────────────────────────────────────────────────────────
+// INA219 Initialization
 void ina219_init() {
     uint8_t buf[3];
     buf[0] = 0x05; buf[1] = 0x04; buf[2] = 0x00;
@@ -76,7 +65,7 @@ float ina219_read_ma() {
     return raw / 3.0f;
 }
 
-// ── Motor ─────────────────────────────────────────────────────────────────────
+// MG996r Motor
 void pwm_init_pin(uint pin) {
     gpio_set_function(pin, GPIO_FUNC_PWM);
     uint slice = pwm_gpio_to_slice_num(pin);
@@ -99,68 +88,27 @@ void motor_drive(int duty) {
     }
 }
 
-// ── HX711 moving average + zero ──────────────────────────────────────────────
-void hx711_update() {
-    int32_t raw = hx711_read() - hx_zero;   // deviation from baseline
-    hx_sum -= hx_buf[hx_idx];
-    hx_buf[hx_idx] = raw;
-    hx_sum += raw;
-    hx_idx = (hx_idx + 1) % HX_SAMPLES;
-
-    float avg = (float)hx_sum / HX_SAMPLES;
-
-    // apply deadband
-    if (avg > -HX_DEADBAND && avg < HX_DEADBAND) {
-        push_norm = 0.0f;
-        return;
-    }
-
-    push_norm = avg / (float)HX_MAX_PUSH;
-    if (push_norm >  1.0f) push_norm =  1.0f;
-    if (push_norm < -1.0f) push_norm = -1.0f;
-}
-
-// ── Haptic: virtual walls ─────────────────────────────────────────────────────
+// Haptics: 1 wall and bump
 float haptic_force(float pos) {
     float force = 0.0f;
 
-    float dist_low  = pos - WALL_LOW;
-    float dist_high = WALL_HIGH - pos;
-
+    // Low wall (hard stop)
+    float dist_low = pos - WALL_LOW;
     if (dist_low < WALL_ZONE) {
         float scale = (WALL_ZONE - dist_low) / WALL_ZONE;
-        // push_norm > 0 means pushing toward low wall — yield slightly
-        // push_norm < 0 means pushing away — full wall
-        float grip = 1.0f - (push_norm > 0.0f ? push_norm : 0.0f);
-        force += scale * WALL_FORCE * grip;
+        force += scale * WALL_FORCE;
     }
 
-    if (dist_high < WALL_ZONE) {
-        float scale = (WALL_ZONE - dist_high) / WALL_ZONE;
-        // push_norm < 0 means pushing toward high wall — yield slightly
-        float grip = 1.0f - (push_norm < 0.0f ? -push_norm : 0.0f);
-        force -= scale * WALL_FORCE * grip;
-    }
+    // Bump at 90° (passable mound)
+    float offset = pos - BUMP_CENTER;
+    float bump = BUMP_FORCE * expf(-0.5f * (offset / BUMP_WIDTH) * (offset / BUMP_WIDTH));
+    if (offset < 0.0f) force -= bump;
+    if (offset > 0.0f) force += bump;
 
     return force;
 }
 
-// ── Gain scheduling by angle ──────────────────────────────────────────────────
-void update_current_gains(float pos) {
-    float dist_low  = pos - WALL_LOW;
-    float dist_high = WALL_HIGH - pos;
-    float proximity = 0.0f;
-
-    if (dist_low < WALL_ZONE)
-        proximity = (WALL_ZONE - dist_low) / WALL_ZONE;
-    else if (dist_high < WALL_ZONE)
-        proximity = (WALL_ZONE - dist_high) / WALL_ZONE;
-
-    Kp_current = KP_BASE + (KP_WALL_MAX - KP_BASE) * proximity;
-    Ki_current = KI_BASE + (KI_WALL_MAX - KI_BASE) * proximity;
-}
-
-// ── 1kHz current control ──────────────────────────────────────────────────────
+// 1kHz current control
 bool current_control(struct repeating_timer *t) {
     actual_current = ina219_read_ma();
     float error = desired_current - actual_current;
@@ -176,15 +124,12 @@ bool current_control(struct repeating_timer *t) {
     return true;
 }
 
-// ── 200Hz position control ────────────────────────────────────────────────────
+//200Hz position control
 bool position_control(struct repeating_timer *t) {
     float pos = as5600_read_degrees(i2c0);
     float vel = pos - last_position;
     last_position = pos;
     position_deg  = pos;
-
-    hx711_update();
-    update_current_gains(pos);
 
     float haptic  = haptic_force(pos);
     float damping = Kd_position * (-vel);
@@ -195,7 +140,7 @@ bool position_control(struct repeating_timer *t) {
     return true;
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// Main
 int main() {
     stdio_init_all();
 
@@ -209,7 +154,6 @@ int main() {
     as5600_init(i2c0, ENC_SDA, ENC_SCL);
     hx711_init(HX711_SCK, HX711_DT);
 
-    // capture zero baseline — keep paddle resting, not touching anything
     hx_zero = hx711_read();
 
     pwm_init_pin(AIN1);
@@ -219,11 +163,27 @@ int main() {
     add_repeating_timer_ms(-5, position_control, NULL, &position_timer);
 
     while (true) {
+        #define HX_AVG_N 8
+        static int32_t hx_buf[HX_AVG_N] = {0};
+        static int     hx_idx = 0;
+        static int64_t hx_sum = 0;
+
+        int32_t hx_new = hx711_read() - hx_zero;
+        hx_sum -= hx_buf[hx_idx];
+        hx_buf[hx_idx] = hx_new;
+        hx_sum += hx_new;
+        hx_idx = (hx_idx + 1) % HX_AVG_N;
+
+        int32_t hx_raw = (int32_t)(hx_sum / HX_AVG_N);
+        if (hx_raw >  50000) hx_raw =  50000;
+        if (hx_raw < -50000) hx_raw = -50000;
+
         printf("%.2f,%.1f,%.1f,%d,%ld\n",
-        position_deg,
-        desired_current,
-        actual_current,
-        pwm_duty,
-        hx711_read() - hx_zero);
+               position_deg,
+               desired_current,
+               actual_current,
+               pwm_duty,
+               hx_raw);
+        sleep_ms(20);
     }
 }
