@@ -25,7 +25,7 @@ WINDOW    = 200
 PHASE_MAX = 500
 
 WALL_LOW  = 45.0
-WALL_HIGH = 110.0
+BUMP = 90.0
 
 # ── Buffers ───────────────────────────────────────────────────────────────────
 positions       = deque([0.0] * WINDOW, maxlen=WINDOW)
@@ -83,7 +83,7 @@ ax_phase.set_xlim(0, 180)
 ax_phase.set_ylim(-550, 550)
 ax_phase.axhline(0, color='gray', linewidth=0.5)
 ax_phase.axvline(WALL_LOW,  color='darkorange', linewidth=1, linestyle='--', label=f'wall low  {WALL_LOW}°')
-ax_phase.axvline(WALL_HIGH, color='darkorange', linewidth=1, linestyle='--', label=f'wall high {WALL_HIGH}°')
+ax_phase.axvline(BUMP, color='darkorange', linewidth=1, linestyle='--', label=f'Bump {BUMP}°')
 ax_phase.legend(fontsize=8, loc='upper right')
 
 scatter_phase, = ax_phase.plot([], [], color='mediumpurple', lw=0.8,
